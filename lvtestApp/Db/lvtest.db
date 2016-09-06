@@ -1,0 +1,73 @@
+record(bo, "LVTU001B01") {
+   field(DESC, "Go control")
+   field(HIGH, "1.0")
+   field(ONAM, "Start")
+   field(ZNAM, "*")
+   field(DTYP, "asynInt32")
+   field(OUT, "@asyn(LV,0,1)Go")
+}
+record(bo, "LVTU001B02") {
+   field(DESC, "Stop control")
+   field(HIGH, "1.0")
+   field(ONAM, "Stop")
+   field(ZNAM, "*")
+   field(DTYP, "asynUInt32Digital")
+   field(OUT, "@asynMask(LV,0,1,1)Stop")
+}
+record(longout, "LVTU001P01") {
+   field(DESC, "steps")
+   field(DTYP, "asynInt32")
+   field(OUT, "@asyn(LV,0,1)Steps")
+}
+record(longout, "LVTU001P02") {
+   field(DESC, "stepsize")
+   field(EGU, "ms")
+   field(DTYP, "asynInt32")
+   field(OUT, "@asyn(LV,0,1)StepSize")
+}
+record(bi, "LVTU001L01") {
+   field(DESC, "Run status")
+   field(DTYP, "asynInt32")
+   field(ONAM, "Running")
+   field(ZNAM, "Not Runnning")
+   field(INP, "@asyn(LV,0,1)Running")
+   field(SCAN, "I/O Intr")
+}
+record(longin, "LVTU001L02") {
+   field(DESC, "current state")
+   field(DTYP, "asynInt32")
+   field(INP, "@asyn(LV,0,1)State")
+   field(SCAN, "I/O Intr")
+}
+record(longin, "LVTU001D01") {
+   field(DESC, "current position")
+   field(DTYP, "asynInt32")
+   field(INP, "@asyn(LV,0,1)Position")
+   field(SCAN, "I/O Intr")
+}
+record(ai, "LVTU001D02") {
+   field(DESC, "Elapsed Time")
+   field(DTYP, "asynFloat64")
+   field(INP, "@asyn(LV,0,1)ElapsedTime")
+   field(SCAN, "I/O Intr")
+}
+record(waveform, "LVTU001D03") {
+   field(DESC, "Positions (scan result)")
+   field(DTYP, "asynInt32ArrayIn")
+   field(NELM, "1024")
+   field(FTVL, "LONG")
+   field(INP, "@asyn(LV,0,1)Positions")
+   field(SCAN, "I/O Intr")
+# The line below sets a 20 element ring buffer, athough this may not be useful
+# with the way channel access works, it could prevent deadlock if an output
+# record is in the same lockset
+# waveforms and strings do not have ringbuffers enabled by default.
+#  info("FIFO","20")
+}
+
+record(stringin,"LVTU001S01") {
+   field(DESC, "Error string")
+   field(DTYP, "asynOctetRead")
+   field(INP, "@asyn(LV,0,1)ErrorString")
+   field(SCAN, "I/O Intr")
+}
