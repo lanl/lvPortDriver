@@ -159,13 +159,13 @@ asynStatus lvPortDriver::writeArray(asynUser *pasynUser, T *value, size_t nBytes
         int32 size=nBytes;
         switch (sizeof(T)) {
           case 8:
-            size<<=3;
+            size>>=3;
              break;
           case 4:
-            size<<=2;
+            size>>=2;
              break;
           case 2:
-            size<<=1;
+            size>>=1;
              break;
           default:
              break;
@@ -500,7 +500,7 @@ static long drvlvPortDriverInit(void)
 
 //c client interface
 typedef struct lvEventParams {
-    LVUserEventRef* Refnum;
+    LVUserEventRef Refnum;
     epicsInt32 port;
     epicsInt32 list;
     epicsInt32 type; //(asynParamType) maybe not necessary
@@ -547,7 +547,7 @@ static void callbackInform(void *userPvt, asynUser *pasynUser, lvEventdata* lvda
     lvdata->param=pasynUser->reason;
     lvdata->status=pasynUser->auxStatus;
     lvdata->type=lvparams->type;
-    PostLVUserEvent(*lvparams->Refnum,(void *)lvdata);
+    PostLVUserEvent(lvparams->Refnum,(void *)lvdata);
 }
 
 template <typename T>
@@ -684,7 +684,7 @@ extern "C" int addevent (int port, int list, const char* param, LVUserEventRef* 
     };	
     plvEventParams =new lvEventParams;
     if (plvEventParams==NULL) return (LVERROR_ALLOCATION);
-    plvEventParams->Refnum=eventRefnum;
+    plvEventParams->Refnum=*eventRefnum;
     plvEventParams->port=port;
     plvEventParams->list=list;
     plvEventParams->type=type;

@@ -14,6 +14,10 @@
 #endif
 // LabVIEW C interface here
 
+#ifdef vxWorks
+#define VXWORKS_PPC
+#endif
+
 #include "extcode.h"
 
 #define MAX_LVPORTS 16

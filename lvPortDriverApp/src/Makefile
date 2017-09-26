@@ -9,7 +9,10 @@ include $(TOP)/configure/CONFIG
 # build a support library
 
 #LIBRARY_IOC += lvPortDriver
-LOADABLE_LIBRARY += lvPortDriver
+#note if loadable library is present code will not be built into the IOC
+#even for static builds.
+#LOADABLE_LIBRARY += lvPortDriver
+LIBRARY += lvPortDriver
 
 # xxxRecord.h will be created from xxxRecord.dbd
 #DBDINC += xxxRecord
