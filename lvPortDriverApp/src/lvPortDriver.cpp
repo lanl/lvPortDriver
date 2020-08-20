@@ -1,10 +1,19 @@
-/*************************************************************************\
-* Copyright (c) 2016 LANS LLC, as Operator of
-*  Los Alamos National Laboratory.
+/******************************************************************************\
+* Copyright (c) 2020 Triad National Security, LLC. All rights reserved.
 * lvPortDriver is distributed subject to a Software License Agreement found
 * in file LICENSE that is included with this distribution.
 * Primary Author: S. A. Baily
-\*************************************************************************/
+*
+* This program was produced under U.S. Government contract 89233218CNA000001
+* for Los Alamos National Laboratory (LANL), which is operated by Triad National
+* Security, LLC for the U.S. Department of Energy/National Nuclear Security
+* Administration. All rights in the program are reserved by Triad National
+* Security, LLC, and the U.S. Department of Energy/National Nuclear Security
+* Administration. The Government is granted for itself and others acting on its
+* behalf a nonexclusive, paid-up, irrevocable worldwide license in this material
+* to reproduce, prepare derivative works, distribute copies to the public,
+* perform publicly and display publicly, and to permit others to do so.
+\******************************************************************************/
 
 #include "lvPortDriver.h"
 #include <string.h>
@@ -64,17 +73,46 @@ typedef struct {
 	int32 size;
 	epicsFloat64 data[1];
 } lvaF64;
+//c client interface
+typedef struct lvEventParams {
+    LVUserEventRef Refnum;
+    epicsInt32 port;
+    epicsInt32 list;
+    epicsInt32 type; //(asynParamType) maybe not necessary
+    const char *portName;
+    const char *paramName;
+    epicsUInt32 mask;
+} lvEventParams;
+
+typedef union {
+        epicsInt32 I32[2];
+        epicsUInt32 U32[2];
+        epicsFloat64 F64;
+	const void* ptr;
+} LVdataunion;
+
+typedef struct lvEventdata {
+    epicsInt32 port;
+    epicsInt32 list;
+    epicsInt32 type; //(asynParamType)
+    epicsInt32 param;
+    epicsInt32 status; //asynStatus
+    LStrHandle string;
+    LVdataunion value;
+} lvEventdata;
+
+
 
 #ifdef _WIN32
 extern "C" _WRS_CONSTRUCTOR(lvDLLInit, 101)
 {
   if (ul_reason_for_call==DLL_PROCESS_DETACH && lvPortDriver_Mutex!=NULL) {
-	//should removeInterruptUser, delete lvEventParams, and freeAsynUser 
+	//should removeInterruptUser, delete lvEventParams, disconnect, and freeAsynUser 
 	//for all events
     lvPortDriver_Mutex->lock();
     if (numlvInterfaces>MAX_LVPORTS) numlvInterfaces=MAX_LVPORTS;
     for (--numlvInterfaces;numlvInterfaces>=0;numlvInterfaces--)
-        delete (lvInterfaces[numlvInterfaces]);  //this doesn't seem to be workign correctly
+        delete (lvInterfaces[numlvInterfaces]);  //this doesn't seem to be working correctly
     lvPortDriver_Mutex->unlock();
     delete (lvPortDriver_Mutex); 
   }
@@ -87,20 +125,37 @@ extern "C" _WRS_CONSTRUCTOR(lvDLLInit, 101)
 }
 #endif
 
+
 // asynGenericPointerMask 
 #define lvPortDriverTypeMask (asynInt32Mask | asynUInt32DigitalMask | asynFloat64Mask | asynOctetMask | asynInt8ArrayMask | asynInt16ArrayMask | asynInt32ArrayMask | asynFloat32ArrayMask| asynFloat64ArrayMask)
 
-lvPortDriver::lvPortDriver(const char *port,int numParams,int maxlists)
-    :asynPortDriver(port,maxlists,numParams,
+lvPortDriver::lvPortDriver(const char *port,int numParams,int maxlists, int portNumber, LVUserEventRef* writeEventRefnum)
+    :asynPortDriver(port,maxlists,
                     lvPortDriverTypeMask | asynOctetMask | asynDrvUserMask, //Interface mask
                     lvPortDriverTypeMask, // Interrupt mask
                     (maxlists>1)?ASYN_MULTIDEVICE:0, /* asynFlags ASYN_CANBLOCK=0 */
                     1, // Autoconnect 
                     0, // Default priority
                     0) // default stack size
-{
+{;
     maxParams=numParams;
+    portNum=portNumber;
     ptrTable=new void**[maxAddr*maxParams]();
+    if (writeEventRefnum) {
+        writeEventRef=*writeEventRefnum;
+        writeEvents=1;
+    } else {
+        writeEvents=0;
+    }
+}
+
+LVUserEventRef lvPortDriver::getWriteEventRef()
+{
+    return (writeEventRef);
+}
+int lvPortDriver::getWriteEvents()
+{
+    return (writeEvents);
 }
 
 lvPortDriver::~lvPortDriver()
@@ -111,7 +166,6 @@ lvPortDriver::~lvPortDriver()
        interruptAccept=0;
     }
     pasynManager->disconnect(pasynUserSelf);//should also delete labVIEW event data structures and unregister for callbacks
-    pasynManager->freeAsynUser(pasynUserSelf);
     lock();
     for(int i=0;i<maxAddr;i++) 
       for(int j=0;j<maxParams;j++) {
@@ -121,6 +175,110 @@ lvPortDriver::~lvPortDriver()
       }
     delete[] ptrTable;  
     unlock();
+}
+
+asynStatus lvPortDriver::writeInt32 (asynUser *pasynUser, epicsInt32 value)
+{ 
+    int addr=0;
+    asynStatus status;
+    asynStatus paramStatus;
+    status = (asynStatus) asynPortDriver::writeInt32(pasynUser,value);
+    if (status != asynSuccess) return(status);
+    status = getAddress(pasynUser, &addr); if (status != asynSuccess) return(status);
+    
+    if (writeEvents) {
+        lvEventdata lvdata;
+        lvdata.port=portNum;
+        lvdata.param=pasynUser->reason;
+        getParamStatus(addr,pasynUser->reason,&paramStatus);
+        lvdata.status=paramStatus;
+        lvdata.list=addr;
+        lvdata.type=asynParamInt32;
+        lvdata.string=NULL;
+        lvdata.value.I32[HI]=value;
+        lvdata.value.I32[LO]=0;
+        PostLVUserEvent(writeEventRef,&lvdata);
+    }
+    return status;
+}
+
+asynStatus lvPortDriver::writeUInt32Digital(asynUser *pasynUser, epicsUInt32 value, epicsUInt32 mask)
+{
+    int addr=0;
+    asynStatus status;
+    asynStatus paramStatus;
+    status = (asynStatus) asynPortDriver::writeUInt32Digital(pasynUser,value,mask);
+    if (status != asynSuccess) return(status);
+    status = getAddress(pasynUser, &addr); if (status != asynSuccess) return(status);
+    
+    if (writeEvents) {
+        lvEventdata lvdata;
+        lvdata.port=portNum;
+        lvdata.param=pasynUser->reason;
+        getParamStatus(addr,pasynUser->reason,&paramStatus);
+        lvdata.status=paramStatus;
+        lvdata.list=addr;
+        lvdata.type=asynParamUInt32Digital;
+        lvdata.string=NULL;
+        lvdata.value.U32[HI]=value;
+        lvdata.value.U32[LO]=mask;
+        PostLVUserEvent(writeEventRef,&lvdata);
+    }
+    return status;
+}
+
+asynStatus lvPortDriver::writeFloat64 (asynUser *pasynUser, epicsFloat64 value)
+{ 
+    int addr=0;
+    asynStatus status;
+    asynStatus paramStatus;
+    status = (asynStatus) asynPortDriver::writeFloat64(pasynUser,value);
+    if (status != asynSuccess) return(status);
+    status = getAddress(pasynUser, &addr); if (status != asynSuccess) return(status);
+    
+    if (writeEvents) {
+        lvEventdata lvdata;
+        lvdata.port=portNum;
+        lvdata.param=pasynUser->reason;
+        getParamStatus(addr,pasynUser->reason,&paramStatus);
+        lvdata.status=paramStatus;
+        lvdata.list=addr;
+        lvdata.type=asynParamFloat64;
+        lvdata.string=NULL;
+        lvdata.value.F64=value;
+        PostLVUserEvent(writeEventRef,&lvdata);
+    }
+    return status;
+}
+asynStatus lvPortDriver::writeOctet (asynUser *pasynUser, const char *value, size_t maxChars, size_t *nActual)
+{ 
+    int addr=0;
+    asynStatus status;
+    asynStatus paramStatus;
+    size_t numChar=0;
+    status = (asynStatus) asynPortDriver::writeOctet(pasynUser,value,maxChars,nActual);
+    if (status != asynSuccess) return(status);
+    status = getAddress(pasynUser, &addr); if (status != asynSuccess) return(status);
+    numChar=*nActual;
+    if (writeEvents) {
+        lvEventdata lvdata;
+        lvdata.port=portNum;
+        lvdata.param=pasynUser->reason;
+        getParamStatus(addr,pasynUser->reason,&paramStatus);
+        lvdata.status=paramStatus;
+        lvdata.list=addr;
+        lvdata.type=asynParamOctet;
+        lvdata.string=(LStrHandle)DSNewHandle(sizeof(int32)+numChar);
+        if (lvdata.string!=NULL) {
+            memcpy((char*)LStrBuf(*lvdata.string),value,numChar);
+            LStrLen(*lvdata.string)=numChar;
+        }
+        lvdata.value.I32[HI]=ASYN_EOM_END;
+        lvdata.value.I32[LO]=0;
+        PostLVUserEvent(writeEventRef,&lvdata);
+        DSDisposeHandle(lvdata.string);
+    }
+    return status;
 }
 
 asynStatus lvPortDriver::readGenericPointer (asynUser *pasynUser, void *pointer)
@@ -139,14 +297,28 @@ asynStatus lvPortDriver::readGenericPointer (asynUser *pasynUser, void *pointer)
 asynStatus lvPortDriver::writeGenericPointer (asynUser *pasynUser, void *pointer)
 {
 	int list=0;
-        asynStatus status;
+    asynStatus status,paramStatus;
 
 	status=getAddress(pasynUser, &list); if (status != asynSuccess) return(status);
-        lock();
+    lock();
 	ptrTable[list*maxAddr+pasynUser->reason]=new void*(pointer);
-        unlock();
-        doCallbacksGenericPointer(pointer,pasynUser->reason, list);
-        return (status);
+    unlock();
+    doCallbacksGenericPointer(pointer,pasynUser->reason, list);
+    if (writeEvents) {
+        lvEventdata lvdata;
+        lvdata.port=portNum;
+        lvdata.param=pasynUser->reason;
+        getParamStatus(list,pasynUser->reason,&paramStatus);
+        lvdata.status=paramStatus;
+        lvdata.list=list;
+        lvdata.type=asynParamGenericPointer;
+        lvdata.string=NULL;
+        lvdata.value.U32[HI]=0;
+        lvdata.value.U32[LO]=0;
+        lvdata.value.ptr=pointer;
+        PostLVUserEvent(writeEventRef,&lvdata);
+    }
+    return (status);
 }
 
 template <typename T, typename S>
@@ -305,13 +477,15 @@ asynStatus lvPortDriver::readFloat64Array (asynUser *pasynUser, epicsFloat64 *va
     return (readArray<epicsFloat64,lvaF64*>(pasynUser,value,nElements<<3,nIn));
 }
 
-asynStatus lvPortDriver::lvWriteArray(int list, int index, asynParamType type, const void **handle, int status)
+asynStatus lvPortDriver::lvWriteArray(int port, int list, int index, asynParamType type, const void **handle, int status, int signal)
 {
     MgErr mgstatus=noErr;
+    LVUserEventRef writeEventRef=0;
     asynStatus astatus=asynError;
     uChar*** handleptr;
     NumType lvtype;
     epicsInt32 datasize=0;
+    void* dataptr=NULL;
 
     if (handle==NULL || *handle==NULL) return (asynError);
     datasize=((lvaI32*) *handle)->size; //size is in the same place for all types of array structures
@@ -358,22 +532,49 @@ asynStatus lvPortDriver::lvWriteArray(int list, int index, asynParamType type, c
     switch (type) {
       case asynParamInt8Array:
         doCallbacksInt8Array(((lvaI8*) **handleptr)->data,((lvaI8*) **handleptr)->size, index, list);
+        dataptr=((lvaI8*) **handleptr)->data;
         break;
       case asynParamInt16Array:
         doCallbacksInt16Array(((lvaI16*) **handleptr)->data,((lvaI16*) **handleptr)->size, index, list);
+        dataptr=((lvaI16*) **handleptr)->data;
         break;
       case asynParamInt32Array:
         doCallbacksInt32Array(((lvaI32*) **handleptr)->data,((lvaI32*) **handleptr)->size, index, list);
+        dataptr=((lvaI32*) **handleptr)->data;
         break;
       case asynParamFloat32Array:
         doCallbacksFloat32Array(((lvaF32*) **handleptr)->data,((lvaF32*) **handleptr)->size, index, list);
+        dataptr=((lvaF32*) **handleptr)->data;
         break;
       case asynParamFloat64Array:
         doCallbacksFloat64Array(((lvaF64*) **handleptr)->data,((lvaF64*) **handleptr)->size, index, list);
+        dataptr=((lvaF64*) **handleptr)->data;
         break;
       default:
         break;
     }
+    if (astatus !=asynSuccess) return astatus;
+    if (lvInterfaces[port]->getWriteEvents()==0) signal=0;
+    else writeEventRef=lvInterfaces[port]->getWriteEventRef();
+    if (signal && dataptr) {
+        lvEventdata lvdata;
+        lvdata.port=port;
+        lvdata.param=index;
+        lvdata.status=status;
+        lvdata.list=list;
+        lvdata.type=type;
+        lvdata.string=(LStrHandle)DSNewHandle(sizeof(int32)+datasize);
+        if (lvdata.string!=NULL) {
+                memcpy((char*)LStrBuf(*lvdata.string),dataptr,datasize);
+                LStrLen(*lvdata.string)=datasize;
+        }
+        lvdata.value.U32[HI]=0;
+        lvdata.value.U32[LO]=0;
+        lvdata.value.ptr=NULL;
+        PostLVUserEvent(writeEventRef,&lvdata);
+        DSDisposeHandle(lvdata.string);
+    }
+
     return (astatus);
 }
 
@@ -497,36 +698,6 @@ static long drvlvPortDriverInit(void)
     return (0);
 }
 
-
-//c client interface
-typedef struct lvEventParams {
-    LVUserEventRef Refnum;
-    epicsInt32 port;
-    epicsInt32 list;
-    epicsInt32 type; //(asynParamType) maybe not necessary
-    const char *portName;
-    const char *paramName;
-    epicsUInt32 mask;
-} lvEventParams;
-
-typedef union {
-        epicsInt32 I32[2];
-        epicsUInt32 U32[2];
-        epicsFloat64 F64;
-	const void* ptr;
-} LVdataunion;
-
-typedef struct lvEventdata {
-    epicsInt32 port;
-    epicsInt32 list;
-    epicsInt32 type; //(asynParamType)
-    epicsInt32 param;
-    epicsInt32 status; //asynStatus
-    LStrHandle string;
-    LVdataunion value;
-} lvEventdata;
-
-
 static LStrHandle stringToNewLStrHandle(LStrHandle *handle,const char* string)
 {
     if (string==NULL) return (NULL);
@@ -536,7 +707,12 @@ static LStrHandle stringToNewLStrHandle(LStrHandle *handle,const char* string)
     LStrLen(**handle)=length;
     return (*handle);
 } 
-
+static void deletelvEventParams (lvEventParams* plvEventParams)
+{
+    if (plvEventParams->portName) delete plvEventParams->portName;
+    if (plvEventParams->paramName) delete plvEventParams->paramName;
+    delete plvEventParams;
+}
 static void callbackInform(void *userPvt, asynUser *pasynUser, lvEventdata* lvdata)
 //does this now have a status parameter, or do we use pasynUser->auxStatus?
 //should we include timestamps?
@@ -692,6 +868,8 @@ extern "C" int addevent (int port, int list, const char* param, LVUserEventRef* 
     if (param) {
         drvInfo=epicsStrDup(param);
         plvEventParams->paramName=epicsStrDup(param);
+    } else {
+        plvEventParams->paramName=NULL;
     }
     pasynUser = pasynManager->createAsynUser(0,0);
 
@@ -699,24 +877,62 @@ extern "C" int addevent (int port, int list, const char* param, LVUserEventRef* 
     if ( (port<0) || (port>=numlvInterfaces)) status=asynError;
     lvPortDriver_Mutex->unlock();
     plvEventParams->portName=epicsStrDup(lvInterfaces[port]->portName);
-    if (status) return (LVERROR_COPY);
+    if (status){
+        deletelvEventParams(plvEventParams);
+        return (LVERROR_COPY);
+    }
     status = pasynManager->connectDevice(pasynUser, plvEventParams->portName, list);
-    if (status) return (LVERROR_CONNECT);
+    if (status) {
+        deletelvEventParams(plvEventParams);
+        if (pasynUser) {
+            pasynManager->disconnect(pasynUser);
+            pasynManager->freeAsynUser(pasynUser);
+        }
+        return (LVERROR_CONNECT);
+    }
     pasynInterface = pasynManager->findInterface(pasynUser, asynInterfaceType, 1);    
-    if (status) return (LVERROR_FIND_INTERFACE);
-    if (!drvInfo) return (LVERROR_DRVINFO);
+    if (status) {
+        deletelvEventParams(plvEventParams);
+        if (pasynUser) {
+            pasynManager->disconnect(pasynUser);
+            pasynManager->freeAsynUser(pasynUser);
+        }
+        return (LVERROR_FIND_INTERFACE);
+    }
+    if (!drvInfo) {
+        deletelvEventParams(plvEventParams);
+        if (pasynUser) {
+            pasynManager->disconnect(pasynUser);
+            pasynManager->freeAsynUser(pasynUser);
+        }
+        return (LVERROR_DRVINFO);
+    }
     pinterface = pasynManager->findInterface(pasynUser, asynDrvUserType, 1);
-    if (!pinterface) return (LVERROR_FIND_INTERFACE);
+    if (!pinterface) {
+        deletelvEventParams(plvEventParams);
+        if (pasynUser) {
+            pasynManager->disconnect(pasynUser);
+            pasynManager->freeAsynUser(pasynUser);
+        }
+        return (LVERROR_FIND_INTERFACE);
+    }
     pDrvUser=(asynDrvUser *)pinterface->pinterface;
     status = pDrvUser->create(pinterface->drvPvt, pasynUser, drvInfo, 0, 0);
-    if (plvEventParams==NULL) return (LVERROR_CREATE_INTERFACE);
+    if (status) {
+        deletelvEventParams(plvEventParams);
+        if (pasynUser) {
+            pasynManager->disconnect(pasynUser);
+            pasynManager->freeAsynUser(pasynUser);
+        }
+        return (LVERROR_CREATE_INTERFACE);
+    }
     switch ((asynParamType) type) {
       case asynParamInt32:
         status=((asynInt32*)(pasynInterface->pinterface))->registerInterruptUser(pasynInterface->drvPvt, pasynUser,
                                                   &callbackI32, plvEventParams, &interruptPvt);
         break;
       case asynParamUInt32Digital:
-	plvEventParams->mask=mask;
+        plvEventParams->mask=mask;
         status=((asynUInt32Digital*)(pasynInterface->pinterface))->registerInterruptUser(pasynInterface->drvPvt, pasynUser,
                                                   &callbackU32, plvEventParams,plvEventParams->mask, &interruptPvt);
         break;
@@ -755,7 +971,15 @@ extern "C" int addevent (int port, int list, const char* param, LVUserEventRef* 
       default:
         status=LVERROR_TYPE;
     };
-    if (status) return (LVERROR_REG_INTERRUPT);                                                  
+    if (status) {
+        deletelvEventParams(plvEventParams);
+        pDrvUser->destroy(pinterface->drvPvt, pasynUser);
+        if (pasynUser) {
+            pasynManager->disconnect(pasynUser);
+            pasynManager->freeAsynUser(pasynUser);
+        }
+        return (LVERROR_REG_INTERRUPT);                                                  
+    }
     return (0);
 }
 
@@ -767,14 +991,14 @@ extern "C" void lvInitialized() // inform driver that LabVIEW created all parame
     lvPortDriver_Mutex->unlock();
 }
 
-extern "C" int lvPortDriverInit(const char *port,int numParams,int maxlists,int *index)
+extern "C" int lvPortDriverInit(const char *port,int numParams,int maxlists,int *index,LVUserEventRef* eventRefnum)
 {
     int status=0;
     if (lvPortDriver_Mutex==NULL) lvPortDriver_Mutex=new epicsMutex;
     lvPortDriver_Mutex->lock();
     if (numlvInterfaces > MAX_LVPORTS) status=LVERROR_PORT_RANGE;
     else {
-	lvInterfaces[numlvInterfaces]=new lvPortDriver(port,numParams,maxlists);
+	lvInterfaces[numlvInterfaces]=new lvPortDriver(port,numParams,maxlists,numlvInterfaces,eventRefnum);
 	if (NULL==lvInterfaces[numlvInterfaces]) status=-1;
 	else {
             *index=numlvInterfaces;
@@ -785,7 +1009,16 @@ extern "C" int lvPortDriverInit(const char *port,int numParams,int maxlists,int 
     lvPortDriver_Mutex->unlock(); 
     return (status);
 }
-
+extern "C" int lvPortDriverExit()
+{
+    lvPortDriver_Mutex->lock();
+    if (numlvInterfaces>MAX_LVPORTS) numlvInterfaces=MAX_LVPORTS;
+    for (--numlvInterfaces;numlvInterfaces>0;numlvInterfaces--)
+        delete (lvInterfaces[numlvInterfaces]);  //this doesn't seem to be working correctly
+    lvPortDriver_Mutex->unlock();
+    delete (lvPortDriver_Mutex); 
+    return (numlvInterfaces);
+}
 extern "C" int CreateParameter(int port,int type,const char *name,int *index)
 //creates parameter for all lists
 {
@@ -859,9 +1092,31 @@ extern "C" int lvReadOctet(int port, int list, int index, int maxChars, char *va
     return (portstatus);
 }
 
-static int lvWrite(int port, int list, int index, asynParamType type, unsigned mask, LVdataunion value, int status)
+extern "C" int setParamAlarmStatus(int port, int list, int index, int alarmStatus) {
+    if (port>=numlvInterfaces) return(LVERROR_UNKNOWN_PORT); //else
+    return(lvInterfaces[port]->setParamAlarmStatus(list, index, alarmStatus));
+}
+
+extern "C" int setParamAlarmSeverity(int port, int list, int index, int alarmSeverity){
+    if (port>=numlvInterfaces) return(LVERROR_UNKNOWN_PORT); //else
+    return(lvInterfaces[port]->setParamAlarmSeverity(list, index, alarmSeverity));
+}
+
+extern "C" int getParamAlarmStatus(int port, int list, int index, int *alarmStatus) {
+    if (port>=numlvInterfaces) return(LVERROR_UNKNOWN_PORT); //else
+    return(lvInterfaces[port]->getParamAlarmStatus(list, index, alarmStatus));
+}
+
+extern "C" int getParamAlarmSeverity(int port, int list, int index, int *alarmSeverity){
+    if (port>=numlvInterfaces) return(LVERROR_UNKNOWN_PORT); //else
+    return(lvInterfaces[port]->getParamAlarmSeverity(list, index, alarmSeverity));
+}
+
+
+static int lvWrite(int port, int list, int index, asynParamType type, unsigned mask, LVdataunion value, int status, int signal)
 {
     int portstatus;
+    LVUserEventRef writeEventRef=0;
     if (lvPortDriver_Mutex==NULL) return (LVERROR_NO_MUTEX);
     lvPortDriver_Mutex->lock();
     if (port>=numlvInterfaces) portstatus=LVERROR_UNKNOWN_PORT;
@@ -885,47 +1140,82 @@ static int lvWrite(int port, int list, int index, asynParamType type, unsigned m
         }
         if (portstatus == asynSuccess) portstatus=lvInterfaces[port]->setParamStatus(list,index,(asynStatus)status);
         if (portstatus == asynSuccess) portstatus=lvInterfaces[port]->callParamCallbacks(list,list);
+        if (lvInterfaces[port]->getWriteEvents()==0) signal=0;
+        else writeEventRef=lvInterfaces[port]->getWriteEventRef();
     }
     lvPortDriver_Mutex->unlock();
+    if (portstatus !=asynSuccess) return portstatus;
+    if (signal) {
+        lvEventdata lvdata;
+        lvdata.port=port;
+        lvdata.param=index;
+        lvdata.status=status;
+        lvdata.list=list;
+        lvdata.type=type;
+        size_t numChar=0;
+        switch (type) {
+          case asynParamInt32:
+          case asynParamUInt32Digital:
+          case asynParamFloat64:
+            lvdata.string=NULL;
+            lvdata.value=value;
+            break;
+          case asynParamOctet:
+            numChar=strlen((const char*)value.ptr);
+            lvdata.string=(LStrHandle)DSNewHandle(sizeof(int32)+numChar*sizeof(uChar));
+            if (lvdata.string!=NULL) {
+                memcpy((char*)LStrBuf(*lvdata.string),value.ptr,numChar);
+                LStrLen(*lvdata.string)=numChar;
+            }
+            lvdata.value.I32[HI]=ASYN_EOM_END;
+            lvdata.value.I32[LO]=0;
+            PostLVUserEvent(writeEventRef,&lvdata);
+            DSDisposeHandle(lvdata.string);
+            break;
+          default:
+            portstatus = asynError;
+        }        
+         PostLVUserEvent(writeEventRef,&lvdata);
+    }
     return (portstatus);
 }
 
-extern "C" int lvWriteI32(int port, int list, int index, int value, int status)
+extern "C" int lvWriteI32(int port, int list, int index, int value, int status, int signal)
 {
     LVdataunion lvdata;
     lvdata.I32[0]=value;
-    return(lvWrite(port,list,index,asynParamInt32,0,lvdata,status));
+    return(lvWrite(port,list,index,asynParamInt32,0,lvdata,status,signal));
 }
 
-extern "C" int lvWriteU32Digital(int port, int list, int index, unsigned mask, unsigned value, int status)
+extern "C" int lvWriteU32Digital(int port, int list, int index, unsigned mask, unsigned value, int status, int signal)
 {
     LVdataunion lvdata;
     lvdata.U32[0]=value;
-    return(lvWrite(port,list,index,asynParamUInt32Digital,mask,lvdata,status));
+    return(lvWrite(port,list,index,asynParamUInt32Digital,mask,lvdata,status,signal));
 }
 
-extern "C" int lvWriteF64(int port, int list, int index, double value, int status)
+extern "C" int lvWriteF64(int port, int list, int index, double value, int status, int signal)
 {
     LVdataunion lvdata;
     lvdata.F64=value;
-    return(lvWrite(port,list,index,asynParamFloat64,0,lvdata,status));
+    return(lvWrite(port,list,index,asynParamFloat64,0,lvdata,status, signal));
 }
 
-extern "C" int lvWriteOctet(int port, int list, int index, const char *value, int status)
+extern "C" int lvWriteOctet(int port, int list, int index, const char *value, int status, int signal)
 {
     LVdataunion lvdata;
     lvdata.ptr=value;
-    return(lvWrite(port,list,index,asynParamOctet,0,lvdata,status));
+    return(lvWrite(port,list,index,asynParamOctet,0,lvdata,status,signal));
 }
 
-extern "C" int lvWriteArray (int port, int list,int index, int type, const void **handle, int status)
+extern "C" int lvWriteArray (int port, int list,int index, int type, const void **handle, int status, int signal)
 {
     int portstatus;
     if (lvPortDriver_Mutex==NULL) return (LVERROR_NO_MUTEX);
     lvPortDriver_Mutex->lock();
     if (port>=numlvInterfaces) portstatus=LVERROR_UNKNOWN_PORT;
     else {
-        portstatus=lvInterfaces[port]->lvWriteArray(list, index, (asynParamType) type, handle, status);
+        portstatus=lvInterfaces[port]->lvWriteArray(port, list, index, (asynParamType) type, handle, status, signal);
     }
     lvPortDriver_Mutex->unlock();
     return (portstatus);

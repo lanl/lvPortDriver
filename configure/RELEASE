@@ -36,7 +36,6 @@ SUPPORT=c:\epics\synApps_5_6/support
 # This module provides support for the APS asyn package.
 # 
 ASYN=c:\epics\synApps_5_6/support\asyn-R4-30
-#ASYN=c:\epics\synApps_5_6/support\asyn4-27
 LINUX_GPIB=NO
 
 # ----------------------------------------------------------------------------
@@ -48,7 +47,7 @@ LINUX_GPIB=NO
 # Therefore I usually "build" the LabVIEW headers as an epics shared app.
 # it should also have labview.lib installed in the lib/$(host_arch) directory if building for windows.
 # this is available from the same directory
-LABVIEW=C:/epics/synApps_5_6/support/labview2014
+LABVIEW=C:/epics/synApps_5_6/support/labview2018
 
 #------------------------------------------------------------------------------
 # Define EPICS_BASE at the end so that any includes it
