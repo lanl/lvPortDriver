@@ -1192,6 +1192,7 @@ extern "C" int lvWriteU32Digital(int port, int list, int index, unsigned mask, u
 {
     LVdataunion lvdata;
     lvdata.U32[HI]=value;
+    lvdata.U32[LO]=mask;
     return(lvWrite(port,list,index,asynParamUInt32Digital,mask,lvdata,status,signal));
 }
 
