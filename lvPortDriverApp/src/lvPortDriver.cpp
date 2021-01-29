@@ -88,6 +88,7 @@ typedef union {
         epicsInt32 I32[2];
         epicsUInt32 U32[2];
         epicsFloat64 F64;
+        int64_t I64;
 	const void* ptr;
 } LVdataunion;
 
@@ -1123,10 +1124,10 @@ static int lvWrite(int port, int list, int index, asynParamType type, unsigned m
     else {
         switch (type) {
           case asynParamInt32:
-            portstatus=lvInterfaces[port]->setIntegerParam(list, index, value.I32[0]);
+            portstatus=lvInterfaces[port]->setIntegerParam(list, index, value.I32[HI]);
             break;
           case asynParamUInt32Digital:
-            portstatus=lvInterfaces[port]->setUIntDigitalParam(list, index, value.U32[0], mask);
+            portstatus=lvInterfaces[port]->setUIntDigitalParam(list, index, value.U32[HI], mask);
             break;
           case asynParamFloat64:
             portstatus=lvInterfaces[port]->setDoubleParam(list, index, value.F64);
@@ -1183,14 +1184,14 @@ static int lvWrite(int port, int list, int index, asynParamType type, unsigned m
 extern "C" int lvWriteI32(int port, int list, int index, int value, int status, int signal)
 {
     LVdataunion lvdata;
-    lvdata.I32[0]=value;
+    lvdata.I32[HI]=value;
     return(lvWrite(port,list,index,asynParamInt32,0,lvdata,status,signal));
 }
 
 extern "C" int lvWriteU32Digital(int port, int list, int index, unsigned mask, unsigned value, int status, int signal)
 {
     LVdataunion lvdata;
-    lvdata.U32[0]=value;
+    lvdata.U32[HI]=value;
     return(lvWrite(port,list,index,asynParamUInt32Digital,mask,lvdata,status,signal));
 }
 

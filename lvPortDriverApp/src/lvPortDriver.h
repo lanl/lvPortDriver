@@ -18,7 +18,6 @@
 #include <asynPortDriver.h>
 #ifdef _WIN32
 #define DECLSPEC __declspec(dllexport)
-#define _M_IX86
 #else
 #define DECLSPEC
 #endif
