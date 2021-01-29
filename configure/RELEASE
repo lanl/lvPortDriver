@@ -22,21 +22,19 @@
 # Define EPICS Base Release version and location of makeBaseApp templates
 #------------------------------------------------------------------------------
 
-EPICS_RELEASE = R3.14.12.3
+#EPICS_RELEASE = R3.14.12.3
 
 #------------------------------------------------------------------------------
 # Define locations of top-level directories
 #------------------------------------------------------------------------------
 
-SUPPORT=c:\epics\synApps_5_6/support
+#SUPPORT=c:\epics\synApps_5_6/support
 
 # ----------------------------------------------------------------------------
 # ASYN: APS ASYN Support
 # ----------------------------------------------------------------------------
 # This module provides support for the APS asyn package.
-# 
-ASYN=c:\epics\synApps_5_6/support\asyn-R4-30
-LINUX_GPIB=NO
+ASYN=$(SHARE_TOP)/asyn/prod
 
 # ----------------------------------------------------------------------------
 # LabVIEW: LabView headers
@@ -47,10 +45,11 @@ LINUX_GPIB=NO
 # Therefore I usually "build" the LabVIEW headers as an epics shared app.
 # it should also have labview.lib installed in the lib/$(host_arch) directory if building for windows.
 # this is available from the same directory
-LABVIEW=C:/epics/synApps_5_6/support/labview2018
+LABVIEW=$(SHARE_TOP)/labview/prod
 
 #------------------------------------------------------------------------------
 # Define EPICS_BASE at the end so that any includes it
 # contains can be overridden by the applications above.
 #------------------------------------------------------------------------------
-EPICS_BASE=c:\epics\base-3.14.12.3
+#EPICS_BASE=c:\epics\base-3.14.12.3
+-include $(TOP)/../../configure/RELEASE.local
