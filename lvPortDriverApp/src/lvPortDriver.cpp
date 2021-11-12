@@ -142,7 +142,7 @@ lvPortDriver::lvPortDriver(const char *port,int numParams,int maxlists, int port
     maxParams=numParams;
     portNum=portNumber;
     ptrTable=new void**[maxAddr*maxParams]();
-    if (writeEventRefnum) {
+    if (writeEventRefnum && *writeEventRefnum) {
         writeEventRef=*writeEventRefnum;
         writeEvents=1;
     } else {
@@ -489,6 +489,7 @@ asynStatus lvPortDriver::lvWriteArray(int port, int list, int index, asynParamTy
     void* dataptr=NULL;
 
     if (handle==NULL || *handle==NULL) return (asynError);
+    if (list>=this->maxAddr) return (asynError);
     datasize=((lvaI32*) *handle)->size; //size is in the same place for all types of array structures
     lock();
     handleptr=(uChar***)&ptrTable[list*maxAddr+index];
@@ -589,6 +590,7 @@ asynStatus lvPortDriver::lvReadArray(int list, int index, asynParamType type, vo
     size_t size,datasize;
 
     if (handlePtr==NULL) return (asynError);
+    if (list>=this->maxAddr) return (asynError);
     lock();
     handleptr=ptrTable?(uChar***)&ptrTable[list*maxAddr+index]:NULL;
     if (handleptr==NULL || *handleptr==NULL) size=0;
