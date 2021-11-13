@@ -290,7 +290,7 @@ asynStatus lvPortDriver::readGenericPointer (asynUser *pasynUser, void *pointer)
 	status=getAddress(pasynUser, &list);
         if (status != asynSuccess) return(status);
         lock();
-	pointer=*ptrTable[list*maxAddr+pasynUser->reason];
+	pointer=*ptrTable[list*maxParams+pasynUser->reason];
         unlock();
 	return (status);
 }
@@ -302,7 +302,7 @@ asynStatus lvPortDriver::writeGenericPointer (asynUser *pasynUser, void *pointer
 
 	status=getAddress(pasynUser, &list); if (status != asynSuccess) return(status);
     lock();
-	ptrTable[list*maxAddr+pasynUser->reason]=new void*(pointer);
+	ptrTable[list*maxParams+pasynUser->reason]=new void*(pointer);
     unlock();
     doCallbacksGenericPointer(pointer,pasynUser->reason, list);
     if (writeEvents) {
@@ -346,7 +346,7 @@ asynStatus lvPortDriver::writeArray(asynUser *pasynUser, T *value, size_t nBytes
 	if (value==NULL) return (asynError);
 	astatus=getAddress(pasynUser, &list); if (astatus != asynSuccess) return(astatus);
         lock();
-	handleptr=(uChar***)&ptrTable[list*maxAddr+pasynUser->reason];
+	handleptr=(uChar***)&ptrTable[list*maxParams+pasynUser->reason];
 
 	status=NumericArrayResize (lvtype,1,handleptr,nBytes);  //(is this really bytes?) works even with Null handles
 	if (status==noErr) {
@@ -389,7 +389,7 @@ asynStatus lvPortDriver::readArray (asynUser *pasynUser, T *value, int32 nBytes,
 	status=getAddress(pasynUser, &list);
         if (status != asynSuccess) return(status);
         lock();
-	handle=(S *)ptrTable[list*maxAddr+pasynUser->reason];
+	handle=(S *)ptrTable[list*maxParams+pasynUser->reason];
 	if (handle==NULL || *handle==NULL) {
             unlock();
             return (asynError);
@@ -492,7 +492,7 @@ asynStatus lvPortDriver::lvWriteArray(int port, int list, int index, asynParamTy
     if (list>=this->maxAddr) return (asynError);
     datasize=((lvaI32*) *handle)->size; //size is in the same place for all types of array structures
     lock();
-    handleptr=(uChar***)&ptrTable[list*maxAddr+index];
+    handleptr=(uChar***)&ptrTable[list*maxParams+index];
     switch (type) {
       case asynParamInt8Array:
         lvtype=iB;
@@ -592,7 +592,7 @@ asynStatus lvPortDriver::lvReadArray(int list, int index, asynParamType type, vo
     if (handlePtr==NULL) return (asynError);
     if (list>=this->maxAddr) return (asynError);
     lock();
-    handleptr=ptrTable?(uChar***)&ptrTable[list*maxAddr+index]:NULL;
+    handleptr=ptrTable?(uChar***)&ptrTable[list*maxParams+index]:NULL;
     if (handleptr==NULL || *handleptr==NULL) size=0;
     else size=((lvaI32*) **handleptr)->size;
         switch (type) {
