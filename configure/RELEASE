@@ -34,7 +34,8 @@
 # ASYN: APS ASYN Support
 # ----------------------------------------------------------------------------
 # This module provides support for the APS asyn package.
-ASYN=$(SHARE_TOP)/asyn/prod
+# 
+ASYN=$(SUPPORT)/asyn
 
 # ----------------------------------------------------------------------------
 # LabVIEW: LabView headers
@@ -45,11 +46,13 @@ ASYN=$(SHARE_TOP)/asyn/prod
 # Therefore I usually "build" the LabVIEW headers as an epics shared app.
 # it should also have labview.lib installed in the lib/$(host_arch) directory if building for windows.
 # this is available from the same directory
-LABVIEW=$(SHARE_TOP)/labview/prod
+LABVIEW=$(SUPPORT)/labview
 
 #------------------------------------------------------------------------------
 # Define EPICS_BASE at the end so that any includes it
 # contains can be overridden by the applications above.
 #------------------------------------------------------------------------------
 #EPICS_BASE=c:\epics\base-3.14.12.3
--include $(TOP)/../../configure/RELEASE.local
+-include $(TOP)/../RELEASE.local
+-include $(TOP)/configure/RELEASE.local
+
