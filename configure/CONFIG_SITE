@@ -19,10 +19,9 @@ CHECK_RELEASE = YES
 # To only use a subset of the supported cross-compiled targets,
 # uncomment the first line and the lines for the targets you
 # wish to include.
-#CROSS_COMPILER_TARGET_ARCHS =
-#CROSS_COMPILER_TARGET_ARCHS += vxWorks-cRIO
-#CROSS_COMPILER_TARGET_ARCHS += linux-x86_64-cRIO
-#CROSS_COMPILER_TARGET_ARCHS += win32-x86-mingw
+CROSS_COMPILER_TARGET_ARCHS := \
+        $(filter %cRIO, $(CROSS_COMPILER_TARGET_ARCHS)) \
+        $(filter win%, $(CROSS_COMPILER_TARGET_ARCHS))
 
 # To install files into a location other than $(TOP) define
 #   INSTALL_LOCATION here.
