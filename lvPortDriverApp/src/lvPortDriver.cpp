@@ -703,11 +703,21 @@ static long drvlvPortDriverInit(void)
 
 static LStrHandle stringToNewLStrHandle(LStrHandle *handle,const char* string)
 {
-    if (string==NULL) return (NULL);
+    if (handle==NULL) return (NULL);  //was passed a null pointer to a handle
+    if (string==NULL) {
+        if (*handle) LStrLen(**handle)=0;  //set length to 0 if null string
+        return (NULL);
+    }
     epicsUInt32 length=strlen(string);
-    *handle=(LStrHandle)DSNewHandle(sizeof(int32)+length*sizeof(uChar));
-    strncpy((char*)LStrBuf(**handle),string,length);
-    LStrLen(**handle)=length;
+    size_t requiredHandleSize=(sizeof(int32)+length*sizeof(uChar));
+    if ( (*handle!=NULL) && (DSGetHandleSize(*handle)< requiredHandleSize) &&
+        DSSetHandleSize(*handle,requiredHandleSize))  //resize handle if too small
+        DSDisposeHandle(*handle);  //dispose of handle if resizing failed
+    if (NULL==*handle) *handle=(LStrHandle)DSNewHandle(requiredHandleSize);  //allocate a new handle
+    if (*handle) {
+        strncpy((char*)LStrBuf(**handle),string,length);
+        LStrLen(**handle)=length;
+    }
     return (*handle);
 } 
 static void deletelvEventParams (lvEventParams* plvEventParams)
