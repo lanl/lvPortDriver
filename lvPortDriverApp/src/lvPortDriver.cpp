@@ -1182,13 +1182,12 @@ static int lvWrite(int port, int list, int index, asynParamType type, unsigned m
             }
             lvdata.value.I32[HI]=ASYN_EOM_END;
             lvdata.value.I32[LO]=0;
-            PostLVUserEvent(writeEventRef,&lvdata);
-            DSDisposeHandle(lvdata.string);
             break;
           default:
             portstatus = asynError;
         }        
          PostLVUserEvent(writeEventRef,&lvdata);
+	 if (type==asynParamOctet) DSDisposeHandle(lvdata.string);
     }
     return (portstatus);
 }
